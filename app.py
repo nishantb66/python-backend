@@ -49,25 +49,23 @@ async def interact_with_article(request: AIRequest):
         article_content = request.article_content
         user_message = request.message
 
-        # Validate input
         if not article_content or not user_message:
             raise HTTPException(
                 status_code=400, detail="Both article content and message are required."
             )
 
-        # Generate the prompt
-        prompt = f"Based on the following article content:\n\n{article_content[:1500]}...\n\nAnswer this question: {user_message}"
+        prompt = f"Based on the following article content:\n\n{article_content[:1500]}...\n\nAnswer this question professionally with a structured format: {user_message}"
 
-        # Query the Groq Llama model
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama3-70b-8192",  # Replace with the appropriate model
         )
         response = chat_completion.choices[0].message.content
-        return {"reply": response}
+
+        formatted_response = f"### Response:\n\n{response.strip()}"
+        return {"reply": formatted_response}
 
     except Exception as e:
-        print(f"Error in /api/interact: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error querying AI: {str(e)}")
 
 
