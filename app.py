@@ -121,6 +121,48 @@ async def classify_one_article(article_id: str):
         )
 
 
+@app.get("/api/articles/summarize/{article_id}")
+async def summarize_article(article_id: str):
+    """
+    Route to summarize an article's content in 50 to 100 words.
+    """
+    try:
+        if groq_client is None:
+            raise HTTPException(
+                status_code=500, detail="Groq Client is not initialized."
+            )
+
+        # Fetch the article by ID
+        article = articles_collection.find_one({"_id": ObjectId(article_id)})
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found.")
+
+        content = article.get("content", "")
+        if not content:
+            summary = "No content available to summarize."
+        else:
+            # Groq summary prompt
+            prompt = f"Summarize the following article content in 50 to 100 words:\n\n{content[:3000]}"
+            response = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192",
+            )
+            summary = response.choices[0].message.content.strip()
+
+        # Return the summary for the article
+        return {
+            "id": str(article["_id"]),
+            "title": article.get("title", "Untitled"),
+            "summary": summary,
+        }
+
+    except Exception as e:
+        print(f"Error summarizing article {article_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error processing article {article_id}."
+        )
+
+
 @app.get("/api/articles")
 async def get_all_articles():
     """
