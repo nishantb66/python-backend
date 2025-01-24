@@ -142,7 +142,7 @@ async def summarize_article(article_id: str):
             summary = "No content available to summarize."
         else:
             # Groq summary prompt
-            prompt = f"Summarize the following article content in 50 to 100 words:\n\n{content[:3000]}"
+            prompt = f"Summarize the following article content in short:\n\n{content[:3000]}"
             response = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
