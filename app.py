@@ -5,6 +5,7 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import groq
+from bson import ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -80,62 +81,67 @@ async def interact_with_article(request: AIRequest):
         raise HTTPException(status_code=500, detail=f"Error querying AI: {str(e)}")
 
 
-# New route to classify articles
-@app.get("/api/articles/classify")
-async def classify_articles():
+# Route to classify articles one by one
+@app.get("/api/articles/classify_one/{article_id}")
+async def classify_one_article(article_id: str):
     try:
         if groq_client is None:
             raise HTTPException(
                 status_code=500, detail="Groq Client is not initialized."
             )
 
-        # Fetch articles from MongoDB
-        articles = list(articles_collection.find({}))
-        if not articles:
-            return {"classifications": []}
+        # Fetch the article by ID
+        article = articles_collection.find_one({"_id": ObjectId(article_id)})
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found.")
 
-        # Classify articles using Groq API
-        classifications = []
-        for article in articles:
-            try:
-                content = article.get("content", "")
-                if not content:
-                    category = "Uncategorized"
-                else:
-                    # Groq classification prompt
-                    prompt = f"Classify the following article into a category such as Sports, Technology, Food, etc., based on its content:\n\n{content}\n\nCategory:"
-                    response = groq_client.chat.completions.create(
-                        messages=[{"role": "user", "content": prompt}],
-                        model="llama3-70b-8192",
-                    )
-                    category = response.choices[0].message.content.strip()
+        content = article.get("content", "")
+        if not content:
+            category = "Uncategorized"
+        else:
+            # Groq classification prompt
+            prompt = f"Classify the following article into a category such as Sports, Technology, Food, etc., based on its content:\n\n{content[:1000]}\n\nCategory:"
+            response = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192",
+            )
+            category = response.choices[0].message.content.strip()
 
-                classifications.append(
-                    {
-                        "id": str(article["_id"]),
-                        "title": article.get("title", "Untitled"),
-                        "category": category,
-                    }
-                )
-            except Exception as e:
-                print(f"Error classifying article {article['_id']}: {e}")
-                classifications.append(
-                    {
-                        "id": str(article["_id"]),
-                        "title": article.get("title", "Untitled"),
-                        "category": "Error",
-                    }
-                )
-
-        return {"classifications": classifications}
+        # Return classification for the article
+        return {
+            "id": str(article["_id"]),
+            "title": article.get("title", "Untitled"),
+            "category": category,
+        }
 
     except Exception as e:
-        print(f"Error in classify_articles route: {e}")
-        raise HTTPException(status_code=500, detail="Error processing articles.")
+        print(f"Error classifying article {article_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error processing article {article_id}."
+        )
+
+
+@app.get("/api/articles")
+async def get_all_articles():
+    """
+    Route to fetch all articles with their IDs and titles.
+    """
+    try:
+        articles = list(articles_collection.find({}, {"_id": 1, "title": 1}))
+        return {
+            "articles": [
+                {"id": str(article["_id"]), "title": article["title"]}
+                for article in articles
+            ]
+        }
+    except Exception as e:
+        print(f"Error fetching articles: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching articles.")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
