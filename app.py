@@ -52,42 +52,6 @@ class ArticleLinkRequest(BaseModel):
     url: str
     message: str
 
-# Models
-class EnhanceRequest(BaseModel):
-    content: str
-
-
-@app.post("/api/articles/enhance")
-async def enhance_article_content(request: EnhanceRequest):
-    """
-    Route to enhance the article content using AI.
-    """
-    try:
-        if groq_client is None:
-            raise HTTPException(
-                status_code=500, detail="Groq Client is not initialized."
-            )
-
-        content = request.content
-
-        if not content.strip():
-            raise HTTPException(status_code=400, detail="Content cannot be empty.")
-
-        # AI prompt to enhance content
-        prompt = f"Rewrite the following text to be more professional, engaging, and polished:\n\n{content[:3000]}"
-
-        response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama3-70b-8192",  # Replace with the appropriate model
-        )
-        enhanced_content = response.choices[0].message.content.strip()
-
-        return {"enhanced_content": enhanced_content}
-
-    except Exception as e:
-        print(f"Error enhancing content: {e}")
-        raise HTTPException(status_code=500, detail=f"Error enhancing content: {str(e)}")
-
 
 def fetch_article_content_from_url(url: str) -> str:
     """
