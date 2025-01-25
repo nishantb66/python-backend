@@ -6,6 +6,8 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import groq
 from bson import ObjectId
+import requests
+from bs4 import BeautifulSoup
 
 # Load environment variables
 load_dotenv()
@@ -28,11 +30,9 @@ client = MongoClient(MONGO_URI)
 db = client["test"]  # Database name
 articles_collection = db["articles"]  # Collection name
 
-
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Article AI Chat API"}
-
 
 # Initialize the Groq client
 api_key = os.getenv("GROQ_API_KEY")
@@ -43,11 +43,38 @@ except Exception as e:
     print(f"Error initializing Groq Client: {e}")
     groq_client = None
 
-
 # Models
 class AIRequest(BaseModel):
     article_content: str
     message: str
+
+class ArticleLinkRequest(BaseModel):
+    url: str
+    message: str
+
+def fetch_article_content_from_url(url: str) -> str:
+    """
+    Fetches the content of an article from the given URL using Beautiful Soup.
+    """
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        # Extract the main content of the article (common tags for articles)
+        paragraphs = soup.find_all("p")
+        content = " ".join([p.get_text(strip=True) for p in paragraphs])
+
+        if not content.strip():
+            raise ValueError("Unable to extract content from the provided URL.")
+
+        return content.strip()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Error fetching article content: {str(e)}"
+        )
 
 
 @app.post("/api/interact")
@@ -81,7 +108,41 @@ async def interact_with_article(request: AIRequest):
         raise HTTPException(status_code=500, detail=f"Error querying AI: {str(e)}")
 
 
-# Route to classify articles one by one
+@app.post("/api/interact_from_url")
+async def interact_with_article_from_url(request: ArticleLinkRequest):
+    """
+    Allows users to interact with an article by providing its URL.
+    """
+    try:
+        if groq_client is None:
+            raise HTTPException(
+                status_code=500, detail="Groq Client is not initialized."
+            )
+
+        # Fetch article content from URL
+        article_content = fetch_article_content_from_url(request.url)
+        user_message = request.message
+
+        if not user_message:
+            raise HTTPException(
+                status_code=400, detail="A message is required to ask a question."
+            )
+
+        prompt = f"Based on the following article content:\n\n{article_content[:1500]}...\n\nAnswer this question professionally with a structured format: {user_message}"
+
+        chat_completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-70b-8192",  # Replace with the appropriate model
+        )
+        response = chat_completion.choices[0].message.content
+
+        formatted_response = f"### Response:\n\n{response.strip()}"
+        return {"reply": formatted_response}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error querying AI: {str(e)}")
+
+
 @app.get("/api/articles/classify_one/{article_id}")
 async def classify_one_article(article_id: str):
     try:
@@ -142,7 +203,7 @@ async def summarize_article(article_id: str):
             summary = "No content available to summarize."
         else:
             # Groq summary prompt
-            prompt = f"Summarize the following article content in short:\n\n{content[:3000]}"
+            prompt = f"Summarize the following article content in 50 to 100 words:\n\n{content[:3000]}"
             response = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
@@ -185,5 +246,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
